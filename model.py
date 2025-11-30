@@ -292,6 +292,9 @@ class ContextualEncoder(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers=2, dropout=0.3):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        # Initialize embedding weights
+        nn.init.xavier_uniform_(self.embedding.weight)
+
         self.lstm = nn.LSTM(
             embedding_dim,
             hidden_dim // 2,  # Divide by 2 for bidirectional
@@ -302,6 +305,15 @@ class ContextualEncoder(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_dim)
+
+        # Initialize LSTM weights properly
+        for name, param in self.lstm.named_parameters():
+            if 'weight_ih' in name:
+                nn.init.xavier_uniform_(param.data)
+            elif 'weight_hh' in name:
+                nn.init.orthogonal_(param.data)
+            elif 'bias' in name:
+                param.data.fill_(0)
 
     def forward(self, input_ids, mask=None):
         """
@@ -316,6 +328,7 @@ class ContextualEncoder(nn.Module):
         embeddings = self.dropout(embeddings)
 
         # Pack padded sequence for efficient LSTM processing
+        original_seq_len = embeddings.size(1)
         if mask is not None:
             lengths = mask.sum(dim=1).cpu()
             # Handle empty sequences (length 0) by clamping to at least 1
@@ -324,7 +337,7 @@ class ContextualEncoder(nn.Module):
                 embeddings, lengths, batch_first=True, enforce_sorted=False
             )
             lstm_out, _ = self.lstm(packed)
-            lstm_out, _ = nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True)
+            lstm_out, _ = nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True, total_length=original_seq_len)
         else:
             lstm_out, _ = self.lstm(embeddings)
 

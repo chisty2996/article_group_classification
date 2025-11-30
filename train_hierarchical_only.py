@@ -82,11 +82,12 @@ def train_hierarchical_model():
     print("=" * 80)
 
     print("\nHyperparameters:")
-    print(f"  - Learning rate: 0.001")
+    print(f"  - Learning rate: 0.0005 (reduced to prevent exploding gradients)")
     print(f"  - Weight decay: 1e-5")
     print(f"  - Batch size: 16")
     print(f"  - Gradient accumulation: 1 (disabled)")
-    print(f"  - Label smoothing: 0.1")
+    print(f"  - Label smoothing: 0.05 (reduced)")
+    print(f"  - Gradient clipping: 5.0")
     print(f"  - Patience: 5 epochs")
     print(f"  - Max epochs: 20")
 
@@ -95,12 +96,12 @@ def train_hierarchical_model():
         train_loader=train_loader,
         val_loader=val_loader,
         device=device,
-        learning_rate=0.001,
+        learning_rate=0.0005,  # Reduced from 0.001
         weight_decay=1e-5,
         patience=5,
         gradient_accumulation_steps=1,  # No gradient accumulation for normal batch size
         use_amp=device.type == 'cuda',  # Use AMP only on CUDA
-        label_smoothing=0.1
+        label_smoothing=0.05  # Reduced from 0.1
     )
 
     # Train
