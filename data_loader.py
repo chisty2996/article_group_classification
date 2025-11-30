@@ -170,9 +170,10 @@ def load_20newsgroups_data(subset='all', max_vocab_size=20000, min_freq=2,
         test_dataset = NewsgroupsDataset(test_texts, test_labels, vocab, max_sent_len, max_num_sent)
 
         # Create data loaders
-        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
-        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
+        # Reduced batch sizes for BERT model to prevent OOM
+        train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0)
+        val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=0)
+        test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False, num_workers=0)
 
         return train_loader, val_loader, test_loader, vocab, label_names
 

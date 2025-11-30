@@ -16,12 +16,14 @@ class Trainer:
     """Trainer class for model training and evaluation"""
 
     def __init__(self, model, train_loader, val_loader, device, learning_rate=0.001,
-                 weight_decay=1e-5, patience=5):
+                 weight_decay=1e-5, patience=5, gradient_accumulation_steps=8, use_amp=True):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
         self.patience = patience
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.use_amp = use_amp and device.type == 'cuda'
 
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -29,38 +31,66 @@ class Trainer:
             self.optimizer, mode='max', factor=0.5, patience=2
         )
 
+        # Mixed precision training
+        if self.use_amp:
+            from torch.cuda.amp import GradScaler
+            self.scaler = GradScaler()
+            print("Using Automatic Mixed Precision (AMP) training")
+
         self.best_val_acc = 0
         self.patience_counter = 0
         self.train_losses = []
         self.val_accuracies = []
 
     def train_epoch(self):
-        """Train for one epoch"""
+        """Train for one epoch with gradient accumulation and mixed precision"""
         self.model.train()
         total_loss = 0
         all_preds = []
         all_labels = []
 
         progress_bar = tqdm(self.train_loader, desc="Training")
+        self.optimizer.zero_grad()
 
-        for batch in progress_bar:
+        for batch_idx, batch in enumerate(progress_bar):
             input_ids = batch['input_ids'].to(self.device)
             sentence_masks = batch['sentence_masks'].to(self.device)
             labels = batch['labels'].to(self.device)
 
-            # Forward pass
-            self.optimizer.zero_grad()
-            logits = self.model(input_ids, sentence_masks=sentence_masks)
+            if self.use_amp:
+                # Mixed precision training
+                from torch.cuda.amp import autocast
+                with autocast():
+                    logits = self.model(input_ids, sentence_masks=sentence_masks)
+                    loss = self.criterion(logits, labels) / self.gradient_accumulation_steps
 
-            # Compute loss
-            loss = self.criterion(logits, labels)
+                # Backward pass with gradient scaling
+                self.scaler.scale(loss).backward()
 
-            # Backward pass
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
-            self.optimizer.step()
+                # Update weights after accumulation steps
+                if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.optimizer.zero_grad()
 
-            total_loss += loss.item()
+                    # Clear CUDA cache periodically
+                    if (batch_idx + 1) % 50 == 0:
+                        torch.cuda.empty_cache()
+            else:
+                # Standard training
+                logits = self.model(input_ids, sentence_masks=sentence_masks)
+                loss = self.criterion(logits, labels) / self.gradient_accumulation_steps
+                loss.backward()
+
+                # Update weights after accumulation steps
+                if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+
+            total_loss += loss.item() * self.gradient_accumulation_steps
 
             # Track predictions
             preds = torch.argmax(logits, dim=1)
@@ -68,7 +98,19 @@ class Trainer:
             all_labels.extend(labels.cpu().numpy())
 
             # Update progress bar
-            progress_bar.set_postfix({'loss': loss.item()})
+            progress_bar.set_postfix({'loss': loss.item() * self.gradient_accumulation_steps})
+
+        # Handle remaining gradients
+        if (batch_idx + 1) % self.gradient_accumulation_steps != 0:
+            if self.use_amp:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+                self.optimizer.step()
+            self.optimizer.zero_grad()
 
         avg_loss = total_loss / len(self.train_loader)
         accuracy = accuracy_score(all_labels, all_preds)

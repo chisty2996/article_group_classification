@@ -489,7 +489,7 @@ class BERTContextualEncoder(nn.Module):
     BERT-based contextual encoder
     Uses pre-trained BERT for better contextual representations
     """
-    def __init__(self, hidden_dim=768, dropout=0.3):
+    def __init__(self, hidden_dim=768, dropout=0.3, freeze_bert_layers=True, use_gradient_checkpointing=True):
         super().__init__()
         from transformers import BertModel
 
@@ -497,9 +497,27 @@ class BERTContextualEncoder(nn.Module):
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.hidden_dim = hidden_dim
 
-        # Freeze BERT parameters initially (can be fine-tuned)
-        for param in self.bert.parameters():
-            param.requires_grad = True  # Allow fine-tuning
+        # Enable gradient checkpointing to save memory
+        if use_gradient_checkpointing:
+            self.bert.gradient_checkpointing_enable()
+            print("BERT: Gradient checkpointing enabled (saves memory)")
+
+        # Freeze BERT parameters to save memory and speed up training
+        if freeze_bert_layers:
+            # Freeze embeddings and first 10 layers (keep last 2 layers trainable)
+            for param in self.bert.embeddings.parameters():
+                param.requires_grad = False
+
+            for layer in self.bert.encoder.layer[:10]:
+                for param in layer.parameters():
+                    param.requires_grad = False
+
+            print("BERT: Frozen embeddings and first 10 layers, keeping last 2 layers trainable")
+        else:
+            # Allow full fine-tuning
+            for param in self.bert.parameters():
+                param.requires_grad = True
+            print("BERT: All layers trainable")
 
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(768)  # BERT outputs 768-dim
@@ -551,7 +569,8 @@ class HierarchicalAttentionBERT(nn.Module):
         pooling_method='multi',
         dropout=0.3,
         max_sent_len=100,
-        max_num_sent=30
+        max_num_sent=30,
+        freeze_bert_layers=True
     ):
         super().__init__()
 
@@ -559,7 +578,9 @@ class HierarchicalAttentionBERT(nn.Module):
         self.max_num_sent = max_num_sent
 
         # Component 1: BERT Contextual Encoder
-        self.encoder = BERTContextualEncoder(hidden_dim=hidden_dim, dropout=dropout)
+        self.encoder = BERTContextualEncoder(hidden_dim=hidden_dim, dropout=dropout,
+                                            freeze_bert_layers=freeze_bert_layers,
+                                            use_gradient_checkpointing=True)
 
         # Component 2: Word-level Attention Filter
         self.word_filter = WordLevelAttentionFilter(hidden_dim, dropout, filter_ratio)
