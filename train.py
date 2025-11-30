@@ -59,8 +59,8 @@ class Trainer:
 
             if self.use_amp:
                 # Mixed precision training
-                from torch.cuda.amp import autocast
-                with autocast():
+                from torch.amp import autocast
+                with autocast(device_type='cuda', dtype=torch.float16):
                     logits = self.model(input_ids, sentence_masks=sentence_masks)
                     loss = self.criterion(logits, labels) / self.gradient_accumulation_steps
 

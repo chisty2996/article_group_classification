@@ -66,7 +66,8 @@ class WordLevelAttentionFilter(nn.Module):
         attention_logits = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(hidden_dim)
 
         if mask is not None:
-            attention_logits = attention_logits.masked_fill(mask.unsqueeze(1) == 0, -1e9)
+            # Use -1e4 instead of -1e9 for FP16 compatibility (max FP16 ~65k)
+            attention_logits = attention_logits.masked_fill(mask.unsqueeze(1) == 0, -1e4)
 
         attention_weights = F.softmax(attention_logits, dim=-1)
         attended_features = torch.matmul(attention_weights, word_embeddings)
@@ -75,7 +76,8 @@ class WordLevelAttentionFilter(nn.Module):
         importance_scores = self.attention_score(attended_features).squeeze(-1)  # (batch, seq_len)
 
         if mask is not None:
-            importance_scores = importance_scores.masked_fill(mask == 0, -1e9)
+            # Use -1e4 instead of -1e9 for FP16 compatibility
+            importance_scores = importance_scores.masked_fill(mask == 0, -1e4)
 
         # Normalize scores
         attention_scores = torch.sigmoid(importance_scores)
@@ -147,7 +149,8 @@ class SentenceRepresentation(nn.Module):
 
         if self.pooling_method == 'max':
             if mask is not None:
-                word_embeddings_masked = word_embeddings.masked_fill(mask.unsqueeze(-1) == 0, -1e9)
+                # Use -1e4 for FP16 compatibility
+                word_embeddings_masked = word_embeddings.masked_fill(mask.unsqueeze(-1) == 0, -1e4)
             else:
                 word_embeddings_masked = word_embeddings
             sentence_repr = torch.max(word_embeddings_masked, dim=1)[0]
@@ -164,14 +167,16 @@ class SentenceRepresentation(nn.Module):
             # Attention-based pooling
             attention_scores = self.attention_pooling(word_embeddings).squeeze(-1)
             if mask is not None:
-                attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
+                # Use -1e4 for FP16 compatibility
+                attention_scores = attention_scores.masked_fill(mask == 0, -1e4)
             attention_weights = F.softmax(attention_scores, dim=-1).unsqueeze(-1)
             sentence_repr = (word_embeddings * attention_weights).sum(dim=1)
 
         else:  # 'multi'
             # Max pooling
             if mask is not None:
-                word_embeddings_masked = word_embeddings.masked_fill(mask.unsqueeze(-1) == 0, -1e9)
+                # Use -1e4 for FP16 compatibility
+                word_embeddings_masked = word_embeddings.masked_fill(mask.unsqueeze(-1) == 0, -1e4)
             else:
                 word_embeddings_masked = word_embeddings
             max_pool = torch.max(word_embeddings_masked, dim=1)[0]
@@ -187,7 +192,8 @@ class SentenceRepresentation(nn.Module):
             # Attention pooling
             attention_scores = self.attention_pooling(word_embeddings).squeeze(-1)
             if mask is not None:
-                attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
+                # Use -1e4 for FP16 compatibility
+                attention_scores = attention_scores.masked_fill(mask == 0, -1e4)
             attention_weights = F.softmax(attention_scores, dim=-1).unsqueeze(-1)
             attn_pool = (word_embeddings * attention_weights).sum(dim=1)
 
