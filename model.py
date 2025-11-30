@@ -503,12 +503,7 @@ class BERTContextualEncoder(nn.Module):
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.hidden_dim = hidden_dim
 
-        # Enable gradient checkpointing to save memory
-        if use_gradient_checkpointing:
-            self.bert.gradient_checkpointing_enable()
-            print("BERT: Gradient checkpointing enabled (saves memory)")
-
-        # Freeze BERT parameters to save memory and speed up training
+        # Freeze BERT parameters BEFORE enabling gradient checkpointing
         if freeze_bert_layers:
             # Freeze embeddings and first 10 layers (keep last 2 layers trainable)
             for param in self.bert.embeddings.parameters():
@@ -519,11 +514,21 @@ class BERTContextualEncoder(nn.Module):
                     param.requires_grad = False
 
             print("BERT: Frozen embeddings and first 10 layers, keeping last 2 layers trainable")
+
+            # Only enable gradient checkpointing on trainable layers when freezing
+            # Disable it to avoid the warning with frozen layers
+            if use_gradient_checkpointing:
+                print("BERT: Gradient checkpointing disabled (incompatible with frozen layers)")
         else:
             # Allow full fine-tuning
             for param in self.bert.parameters():
                 param.requires_grad = True
             print("BERT: All layers trainable")
+
+            # Enable gradient checkpointing only when all layers are trainable
+            if use_gradient_checkpointing:
+                self.bert.gradient_checkpointing_enable()
+                print("BERT: Gradient checkpointing enabled (saves memory)")
 
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(768)  # BERT outputs 768-dim

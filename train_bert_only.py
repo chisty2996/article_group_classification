@@ -5,7 +5,7 @@ Use this if you've already trained the other models
 
 import torch
 import os
-from data_loader import load_20newsgroups_data
+from data_loader_bert import load_20newsgroups_data_bert
 from model import HierarchicalAttentionBERT
 from train import Trainer, evaluate_model
 
@@ -38,10 +38,8 @@ def train_bert_model():
     print("LOADING DATA")
     print("=" * 80)
 
-    train_loader, val_loader, test_loader, vocab, label_names = load_20newsgroups_data(
+    train_loader, val_loader, test_loader, tokenizer, label_names = load_20newsgroups_data_bert(
         subset='all',
-        max_vocab_size=20000,
-        min_freq=2,
         max_sent_len=100,
         max_num_sent=30,
         test_size=0.15
@@ -49,6 +47,7 @@ def train_bert_model():
 
     print(f"\nDataset loaded successfully")
     print(f"  - Number of classes: {len(label_names)}")
+    print(f"  - BERT vocab size: {tokenizer.vocab_size}")
     print(f"  - Training batches: {len(train_loader)}")
     print(f"  - Validation batches: {len(val_loader)}")
     print(f"  - Test batches: {len(test_loader)}")
