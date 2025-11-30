@@ -16,7 +16,8 @@ class Trainer:
     """Trainer class for model training and evaluation"""
 
     def __init__(self, model, train_loader, val_loader, device, learning_rate=0.001,
-                 weight_decay=1e-5, patience=5, gradient_accumulation_steps=8, use_amp=True):
+                 weight_decay=1e-5, patience=5, gradient_accumulation_steps=8, use_amp=True,
+                 label_smoothing=0.1):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -25,7 +26,8 @@ class Trainer:
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.use_amp = use_amp and device.type == 'cuda'
 
-        self.criterion = nn.CrossEntropyLoss()
+        # Use label smoothing to prevent overconfident predictions
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode='max', factor=0.5, patience=2

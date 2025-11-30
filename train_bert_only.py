@@ -82,16 +82,46 @@ def train_bert_model():
     print("STARTING TRAINING")
     print("=" * 80)
 
+    # Use different learning rates for BERT and classifier
+    # BERT layers need smaller LR, classifier needs larger LR
+    bert_params = []
+    classifier_params = []
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if 'bert' in name:
+                bert_params.append(param)
+            else:
+                classifier_params.append(param)
+
+    optimizer_params = [
+        {'params': bert_params, 'lr': 2e-5},  # Small LR for BERT
+        {'params': classifier_params, 'lr': 1e-3}  # Larger LR for classifier
+    ]
+
+    print(f"\nOptimizer configuration:")
+    print(f"  - BERT params: {len(bert_params)} groups, LR=2e-5")
+    print(f"  - Classifier params: {len(classifier_params)} groups, LR=1e-3")
+
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         device=device,
-        learning_rate=0.001,
+        learning_rate=0.001,  # Default, will be overridden
         weight_decay=1e-5,
         patience=5,
         gradient_accumulation_steps=8,
-        use_amp=True
+        use_amp=True,
+        label_smoothing=0.1  # Prevent overconfident predictions
+    )
+
+    # Override optimizer with custom param groups
+    trainer.optimizer = torch.optim.Adam(optimizer_params, weight_decay=1e-5)
+
+    # Recreate scheduler with new optimizer
+    trainer.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        trainer.optimizer, mode='max', factor=0.5, patience=2
     )
 
     # Train
