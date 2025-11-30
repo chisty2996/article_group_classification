@@ -109,7 +109,7 @@ def build_vocabulary(texts, max_vocab_size=20000, min_freq=2):
 
 def load_20newsgroups_data(subset='all', max_vocab_size=20000, min_freq=2,
                           max_sent_len=100, max_num_sent=30, test_size=0.15,
-                          use_bert_tokenizer=False):
+                          use_bert_tokenizer=False, batch_size=16):
     """
     Load and preprocess 20 newsgroups dataset
 
@@ -170,10 +170,10 @@ def load_20newsgroups_data(subset='all', max_vocab_size=20000, min_freq=2,
         test_dataset = NewsgroupsDataset(test_texts, test_labels, vocab, max_sent_len, max_num_sent)
 
         # Create data loaders
-        # Reduced batch sizes for BERT model to prevent OOM
-        train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0)
-        val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=0)
-        test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False, num_workers=0)
+        # Use configurable batch size (default 16 for non-BERT models, 2 for BERT)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size*2, shuffle=False, num_workers=0)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size*2, shuffle=False, num_workers=0)
 
         return train_loader, val_loader, test_loader, vocab, label_names
 

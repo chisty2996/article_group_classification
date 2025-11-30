@@ -16,8 +16,8 @@ class Trainer:
     """Trainer class for model training and evaluation"""
 
     def __init__(self, model, train_loader, val_loader, device, learning_rate=0.001,
-                 weight_decay=1e-5, patience=5, gradient_accumulation_steps=8, use_amp=True,
-                 label_smoothing=0.1):
+                 weight_decay=1e-5, patience=5, gradient_accumulation_steps=1, use_amp=False,
+                 label_smoothing=0.0):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
