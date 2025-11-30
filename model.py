@@ -84,6 +84,11 @@ class WordLevelAttentionFilter(nn.Module):
 
         # Filter top-k words based on importance
         k = max(1, int(seq_len * self.filter_ratio))
+        if mask is not None:
+            # Clamp k to avoid selecting padding tokens
+            # Use minimum valid length across batch to ensure all samples have enough tokens
+            min_valid_length = mask.sum(dim=1).min().item()
+            k = min(k, max(1, int(min_valid_length)))
         top_k_scores, top_k_indices = torch.topk(attention_scores, k, dim=-1)
 
         # Gather filtered word embeddings
@@ -384,17 +389,26 @@ class HierarchicalAttentionClassifier(nn.Module):
         # Component 3: Sentence Representation
         self.sentence_repr = SentenceRepresentation(hidden_dim, pooling_method, dropout)
 
+        # Project filtered words to match sentence representation dimension
+        # This allows cross-attention to work with same-dimensional queries and keys/values
+        if self.sentence_repr.output_dim != hidden_dim:
+            self.filtered_word_proj = nn.Linear(hidden_dim, self.sentence_repr.output_dim)
+        else:
+            self.filtered_word_proj = None
+
         # Component 4: Document-level Cross-Attention
+        # FIX: Use sentence_repr.output_dim for both dimensions to preserve full information
         self.cross_attention = DocumentCrossAttention(
-            hidden_dim, self.sentence_repr.output_dim, num_attention_heads, dropout
+            self.sentence_repr.output_dim, self.sentence_repr.output_dim, num_attention_heads, dropout
         )
 
         # Component 5: Classification Layer
+        # FIX: Input dimension is now sentence_repr.output_dim (768 for multi-pooling)
         self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(self.sentence_repr.output_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_classes)
+            nn.Linear(hidden_dim, num_classes)
         )
 
     def forward(self, input_ids, sentence_masks=None, return_attention=False):
@@ -426,12 +440,18 @@ class HierarchicalAttentionClassifier(nn.Module):
         )
 
         # 3. Sentence Representation
-        sentence_embeddings = self.sentence_repr(contextual_embeddings, masks_flat)
+        # FIX: Use filtered words for sentence representation (hierarchical design)
+        # This ensures sentence vectors are built from important words only
+        sentence_embeddings = self.sentence_repr(filtered_words, None)  # No mask needed - already filtered
         sentence_embeddings = sentence_embeddings.view(batch_size, num_sentences, -1)
 
         # Reshape filtered words for document-level processing
         num_filtered = filtered_words.size(1)
         filtered_words = filtered_words.view(batch_size, num_sentences * num_filtered, -1)
+
+        # Project filtered words to match sentence dimension if needed
+        if self.filtered_word_proj is not None:
+            filtered_words = self.filtered_word_proj(filtered_words)
 
         # 4. Document-level Cross-Attention
         doc_representation, cross_attn_weights = self.cross_attention(
